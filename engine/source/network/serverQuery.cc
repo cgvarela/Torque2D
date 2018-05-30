@@ -106,6 +106,8 @@
 #include "game/version.h"
 #include "game/gameConnection.h"
 
+#include "serverQuery_ScriptBinding.h"
+
 // This is basically the server query protocol version now:
 static const char* versionString = "VER1";
 
@@ -125,7 +127,7 @@ static const S32 gMaxConcurrentQueries = 2;
 static const S32 gPingRetryCount = 4;
 static const S32 gPingTimeout = 800;
 static const S32 gQueryRetryCount = 4;
-static const S32 gQueryTimeout = 1000;
+//static const S32 gQueryTimeout = 1000;
 
 // State variables:
 static bool sgServerQueryActive = false;
@@ -137,8 +139,6 @@ static bool gGotFirstListPacket = false;
 static U32 gServerPingCount = 0;
 static U32 gServerQueryCount = 0;
 static U32 gHeartbeatSeq = 0;
-
-ConsoleFunctionGroupBegin( ServerQuery, "Functions which allow you to query the LAN or a master server for online games.");
 
 //-----------------------------------------------------------------------------
 
@@ -160,10 +160,12 @@ static Vector<Ping> gQueryList(__FILE__, __LINE__);
 
 struct PacketStatus
 {
-   U8  index;
+   U16  index;
    S32 key;
    U32 time;
    U32 tryCount;
+
+   PacketStatus() : index( 0 ), key(-1), time(0), tryCount( gPacketRetryCount ) {};
 
    PacketStatus( U8 _index, S32 _key, U32 _time )
    {
@@ -172,6 +174,9 @@ struct PacketStatus
       time = _time;
       tryCount = gPacketRetryCount;
    }
+
+   inline U8 getOldIndex() { return (U8)index; }
+   inline U16 getIndex() { return index; }
 };
 
 static Vector<PacketStatus> gPacketStatusList(__FILE__, __LINE__);
@@ -188,15 +193,12 @@ struct ServerFilter
       Favorites   = 3,
    };
 
-   Type  type;
-   char* gameType;
-   char* missionType;
-
    enum // Query Flags
    {
       OnlineQuery       = 0,        // Authenticated with master
       OfflineQuery      = BIT(0),   // On our own
       NoStringCompress  = BIT(1),
+      NewStyleResponse  = BIT(2),  // Include IPV6 servers
    };
 
    enum // Filter flags:
@@ -204,23 +206,36 @@ struct ServerFilter
       Dedicated         = BIT(0),
       NotPassworded     = BIT(1),
       Linux             = BIT(2),
-      CurrentVersion    = BIT(7),
+      CurrentVersion    = BIT(6)
    };
 
+   enum // Region mask flags
+   {
+      RegionIsIPV4Address = BIT(30),
+      RegionIsIPV6Address = BIT(31),
+
+      RegionAddressMask = RegionIsIPV4Address | RegionIsIPV6Address
+   };
+   
+   //Rearranging the fields according to their sizes
+   char* gameType;
+   char* missionType;
    U8    queryFlags;
    U8    minPlayers;
    U8    maxPlayers;
    U8    maxBots;
+   U8    filterFlags;
+   U8    buddyCount;
+   U16   minCPU;
    U32   regionMask;
    U32   maxPing;
-   U8    filterFlags;
-   U16   minCPU;
-   U8    buddyCount;
    U32*  buddyList;
+   Type  type;
 
    ServerFilter()
    {
-      queryFlags = 0;
+      type = Normal;
+      queryFlags = NewStyleResponse;
       gameType = NULL;
       missionType = NULL;
       minPlayers = 0;
@@ -381,51 +396,20 @@ void queryLanServers(U32 port, U8 flags, const char* gameType, const char* missi
 
    NetAddress addr;
    char addrText[256];
+
+   // IPV4
    dSprintf( addrText, sizeof( addrText ), "IP:BROADCAST:%d", port );
    Net::stringToAddress( addrText, &addr );
    pushPingBroadcast( &addr );
 
+   // IPV6
+   dSprintf(addrText, sizeof(addrText), "IP6:MULTICAST:%d", port);
+   Net::stringToAddress(addrText, &addr);
+   pushPingBroadcast(&addr);
+
+   
    Con::executef( 4, "onServerQueryStatus", "start", "Querying LAN servers", "0");
    processPingsAndQueries( gPingSession );
-}
-
-//-----------------------------------------------------------------------------
-ConsoleFunction( queryLanServers, void, 12, 12, "( port , flags , gametype , missiontype , minplayers , maxplayers , maxbots , regionmask , maxping , mincpu , filterflags ) Use the queryLANServers function to establish whether any game servers of the required specification(s) are available on the local area network (LAN).\n"
-                                                                "@param port Look for any game servers advertising at this port. Set to 0 if you don't care what port the game server is using.\n"
-                                                                "@param flags Look for any game servers with these special flags set. Set to 0 for no flags.\n"
-                                                                "@param gametype Look for any game servers playing a game type that matches this string. Set to the NULL string to look for any game type.\n"
-                                                                "@param missiontype Look for any game servers playing a mission type that matches this string. Set to the NULL string to look for any mission type.\n"
-                                                                "@param minplayers Look for any game servers with this number of players or more. Set to 0 for no lower limit.\n"
-                                                                "@param maxplayers Look for any game servers with this number of players or fewer. Set to 0 for no upper limit.\n"
-                                                                "@param maxbots Look for any game servers with this number of AI controlled players or fewer. Set to 0 for no limit.\n"
-                                                                "@param regionmask Look for any master servers, on our master server list, in this region. Set to 0 to examine all regions.\n"
-                                                                "@param maxping Look for any game servers with a PING rate equal to or lower than this. Set to 0 for no upper PING limit.\n"
-                                                                "@param mincpu Look for any game servers with a CPU (clock speed) equal or greater than this. Set to 0 for no CPU (clock speed) limit.\n"
-                                                                "@param filterflags Look for any game servers with this game version number or higher. Set to 0 to find all versions.\n"
-                                                                "@return No return value.\n"
-                                                                "@sa getServerCount, queryMasterServer, setServerInfo, stopServerQuery")
-{
-   U32 lanPort = dAtoi(argv[1]);
-   U8 flags = dAtoi(argv[2]);
-
-   // It's not a good idea to hold onto args, recursive calls to
-   // console exec will trash them.
-   char* gameType = dStrdup(argv[3]);
-   char* missionType = dStrdup(argv[4]);
-
-   U8 minPlayers = dAtoi(argv[5]);
-   U8 maxPlayers = dAtoi(argv[6]);
-   U8 maxBots = dAtoi(argv[7]);
-   U32 regionMask = dAtoi(argv[8]);
-   U32 maxPing = dAtoi(argv[9]);
-   U16 minCPU = dAtoi(argv[10]);
-   U8 filterFlags = dAtoi(argv[11]);
-
-   queryLanServers(lanPort, flags, gameType, missionType, minPlayers, maxPlayers, maxBots,
-       regionMask, maxPing, minCPU, filterFlags);
-
-   dFree(gameType);
-   dFree(missionType);
 }
 
 //-----------------------------------------------------------------------------
@@ -472,7 +456,7 @@ void queryMasterServer(U8 flags, const char* gameType, const char* missionType,
          dStrcpy( sActiveFilter.missionType, missionType );
       }
 
-      sActiveFilter.queryFlags   = flags;
+      sActiveFilter.queryFlags   = flags | ServerFilter::NewStyleResponse;
       sActiveFilter.minPlayers   = minPlayers;
       sActiveFilter.maxPlayers   = maxPlayers;
       sActiveFilter.maxBots      = maxBots;
@@ -489,6 +473,7 @@ void queryMasterServer(U8 flags, const char* gameType, const char* missionType,
       sActiveFilter.type = ServerFilter::Buddy;
       sActiveFilter.buddyCount = buddyCount;
       sActiveFilter.buddyList = (U32*) dRealloc( sActiveFilter.buddyList, buddyCount * 4 );
+      sActiveFilter.queryFlags = ServerFilter::NewStyleResponse;
       dMemcpy( sActiveFilter.buddyList, buddyList, buddyCount * 4 );
       clearServerList();
    }
@@ -511,63 +496,6 @@ void queryMasterServer(U8 flags, const char* gameType, const char* missionType,
    }
    else
       processMasterServerQuery( gPingSession );
-}
-
-ConsoleFunction( queryMasterServer, void, 11, 11, "( flags , gametype , missiontype , minplayers , maxplayers , maxbots , regionmask , maxping , mincpu , filterflags ) Use the queryMasterServer function to query all master servers in the master server list and to establish if they are aware of any game servers that meet the specified requirements, as established by the arguments passed to this function.\n"
-                                                                "In order for this function to do anything, a list of master servers must have been previously specified. This list may contain one or more server addresses. A call to this function will search all servers in the list. To specify a list, simply create a set of array entries like this:\n$pref::Master[0] = \"2:192.168.123.15:28002\";\n$pref::Master[1] = \"2:192.168.123.2:28002\";\nThe format of these values is ==> Region Number : IP Address : Port Number\nThese values should be specified in either the client's or the server's preferences file (prefs.cs). You may specifiy it elsewhere, however be sure that it is specified prior to this function being called and before any other functions that rely on it.\n"
-                                                                "@param flags Look for any game servers with these special flags set. Set to 0 for no flags.\n"
-                                                                "@param gametype Look for any game servers playing a game type that matches this string. Set to the NULL string to look for any game type.\n"
-                                                                "@param missiontype Look for any game servers playing a mission type that matches this string. Set to the NULL string to look for any mission type.\n"
-                                                                "@param minplayers Look for any game servers with this number of players or more. Set to 0 for no lower limit.\n"
-                                                                "@param maxplayers Look for any game servers with this number of players or fewer. Set to 0 for no upper limit.\n"
-                                                                "@param maxbots Look for any game servers with this number of AI controlled players or fewer. Set to 0 for no limit.\n"
-                                                                "@param regionmask Look for any master servers, on our master server list, in this region. Set to 0 to examine all regions.\n"
-                                                                "@param maxping Look for any game servers with a PING rate equal to or lower than this. Set to 0 for no upper PING limit.\n"
-                                                                "@param mincpu Look for any game servers with a CPU (clock speed) equal or greater than this. Set to 0 for no CPU (clock speed) limit.\n"
-                                                                "@param filterflags Look for any game servers with this game version number or higher. Set to 0 to find all versions.\n"
-                                                                "@return No return value.\n"
-                                                                "@sa getServerCount, queryLANServers, setServerInfo, startHeartbeat, stopServerQuery")
-{
-   U8 flags = dAtoi(argv[1]);
-
-   // It's not a good idea to hold onto args, recursive calls to
-   // console exec will trash them.
-   char* gameType = dStrdup(argv[2]);
-   char* missionType = dStrdup(argv[3]);
-
-   U8 minPlayers = dAtoi(argv[4]);
-   U8 maxPlayers = dAtoi(argv[5]);
-   U8 maxBots = dAtoi(argv[6]);
-   U32 regionMask = dAtoi(argv[7]);
-   U32 maxPing = dAtoi(argv[8]);
-   U16 minCPU = dAtoi(argv[9]);
-   U8 filterFlags = dAtoi(argv[10]);
-   U32 buddyList = 0;
-
-   queryMasterServer(flags,gameType,missionType,minPlayers,maxPlayers,
-      maxBots,regionMask,maxPing,minCPU,filterFlags,0,&buddyList);
-
-   dFree(gameType);
-   dFree(missionType);
-}
-
-//-----------------------------------------------------------------------------
-
-ConsoleFunction( querySingleServer, void, 3, 3, "( address [ , flags ] ) Use the querySingleServer function to re-query a previously queried lan server, OR a game server found with queryLANServers or with queryMasterServer and selected with setServerInfo. This will refresh the information stored by TGE about this server. It will not however modify the values of the $ServerInfo::* global variables.\n"
-                                                                "@param address The IP address and Port to re-query, i.e. \"192.168.123.2:28000\".\n"
-                                                                "@param flags No longer used.\n"
-                                                                "@return No return value.\n"
-                                                                "@sa getServerCount, queryLANServers, queryMasterServer, setServerInfo, stopServerQuery")
-{
-   NetAddress addr;
-   char* addrText;
-
-   addrText = dStrdup(argv[1]);
-   U8 flags = dAtoi(argv[2]);
-
-
-   Net::stringToAddress( addrText, &addr );
-   querySingleServer(&addr,flags);
 }
 
 //-----------------------------------------------------------------------------
@@ -647,13 +575,6 @@ void cancelServerQuery()
    }
 }
 
-ConsoleFunction( cancelServerQuery, void, 1, 1, "() Use the cancelServerQuery function to cancel a previous query*() call.\n"
-                                                                "@return No return value.\n"
-                                                                "@sa queryLANServers, queryMasterServer, querySingleServer")
-{
-   cancelServerQuery();
-}
-
 //-----------------------------------------------------------------------------
 
 void stopServerQuery()
@@ -677,19 +598,7 @@ void stopServerQuery()
    }
 }
 
-ConsoleFunction( stopServerQuery, void, 1, 1, "() Use the stopServerQuery function to cancel any outstanding server queries.\n"
-                                                                "@return No return value.\n"
-                                                                "@sa queryLANServers, queryMasterServer, querySingleServer")
-{
-   stopServerQuery();
-}
-
-//-----------------------------------------------------------------------------
-
-ConsoleFunction(startHeartbeat, void, 1, 1, "() Use the startHeartbeat function to start advertising this game serer to any master servers on the master server list.\n"
-                                                                "In order for this function to do anything, a list of master servers must have been previously specified. This list may contain one or more server addresses. Once this function is called, the game server will re-advertise itself to all the master servers on its master server lits every two minutes. To specify a list, simply create a set of array entries like this:\n$pref::Master[0] = \"2:192.168.123.15:28002\";\n$pref::Master[1] = \"2:192.168.123.2:28002\";\nThe format of these values is ==> Region Number : IP Address : Port Number\nThese values should be specified in either the client's or the server's preferences file (prefs.cs). You may specifiy it elsewhere, however be sure that it is specified prior to this function being called and before any other functions that rely on it.\n"
-                                                                "@return No return value.\n"
-                                                                "@sa queryMasterServer, stopHeartbeat")
+void startHeartbeat()
 {
    if (validateAuthenticatedServer())
    {
@@ -698,59 +607,10 @@ ConsoleFunction(startHeartbeat, void, 1, 1, "() Use the startHeartbeat function 
    }
 }
 
-ConsoleFunction(stopHeartbeat, void, 1, 1, "() Use the startHeartbeat function to stop advertising this game serer to any master servers on the master server list.\n"
-                                                                "@return No return value.\n"
-                                                                "@sa queryMasterServer, startHeartbeat")
+void stopHeartBeat()
 {
    gHeartbeatSeq++;
 }
-
-//-----------------------------------------------------------------------------
-
-ConsoleFunction( getServerCount, int, 1, 1, "() Use the getServerCount function to determine the number of game servers found on the last queryLANServers() or queryMasterServer() call.\n"
-                                                                "This value is important because it allows us to properly index when calling setServerInfo().\n"
-                                                                "@return Returns a numeric value equal to the number of game servers found on the last queryLANServers() or queryMasterServer() call. Returns 0 if the function was not called, or none were found.\n"
-                                                                "@sa queryLANServers, queryMasterServer, setServerInfo")
-{
-   return gServerList.size();
-}
-
-ConsoleFunction( setServerInfo, bool, 2, 2, "( index ) Use the setServerInfo function to set the values of the $ServerInfo::* global variables with information for a server found with queryLANServers or with queryMasterServer.\n"
-                                                                "@param index The index of the server to get information about.\n"
-                                                                "@return Will return true if the information was successfully set, false otherwise.\n"
-                                                                "@sa getServerCount, queryLANServers, queryMasterServer, querySingleServer")
-{
-   S32 index = dAtoi(argv[1]);
-   
-   if (index >= 0 && index < gServerList.size())
-   {
-      ServerInfo& info = gServerList[index];
-
-      char addrString[256];
-      Net::addressToString( &info.address, addrString );
-
-      Con::setIntVariable("ServerInfo::Status",info.status);
-      Con::setVariable("ServerInfo::Address",addrString);
-      Con::setVariable("ServerInfo::Name",info.name);
-      Con::setVariable("ServerInfo::GameType",info.gameType);
-      Con::setVariable("ServerInfo::MissionName",info.missionName);
-      Con::setVariable("ServerInfo::MissionType",info.missionType);
-      Con::setVariable("ServerInfo::State",info.statusString);
-      Con::setVariable("ServerInfo::Info",info.infoString);
-      Con::setIntVariable("ServerInfo::PlayerCount",info.numPlayers);
-      Con::setIntVariable("ServerInfo::MaxPlayers",info.maxPlayers);
-      Con::setIntVariable("ServerInfo::BotCount",info.numBots);
-      Con::setIntVariable("ServerInfo::Version",info.version);
-      Con::setIntVariable("ServerInfo::Ping",info.ping);
-      Con::setIntVariable("ServerInfo::CPUSpeed",info.cpuSpeed);
-      Con::setBoolVariable("ServerInfo::Favorite",info.isFavorite);
-      Con::setBoolVariable("ServerInfo::Dedicated",info.isDedicated());
-      Con::setBoolVariable("ServerInfo::Password",info.isPassworded());
-      return true;
-   }
-   return false;
-}
-
 
 //-----------------------------------------------------------------------------
 // Internal
@@ -792,7 +652,7 @@ Vector<MasterInfo>* getMasterServerList()
          U32 region = 1; // needs to default to something > 0
          dSscanf(master,"%d:",&region);
          const char* madd = dStrchr(master,':') + 1;
-         if (region && Net::stringToAddress(madd,&address)) {
+         if (region && Net::stringToAddress(madd,&address) == Net::NoError) {
             masterList.increment();
             MasterInfo& info = masterList.last();
             info.address = address;
@@ -1186,10 +1046,13 @@ static void processMasterServerQuery( U32 session )
 
             // Send a request to the master server for the server list:
             BitStream *out = BitStream::getPacketStream();
+
             out->write( U8( NetInterface::MasterServerListRequest ) );
+            
             out->write( U8( sActiveFilter.queryFlags) );
             out->write( ( gMasterServerPing.session << 16 ) | ( gMasterServerPing.key & 0xFFFF ) );
             out->write( U8( 255 ) );
+
             writeCString( out, sActiveFilter.gameType );
             writeCString( out, sActiveFilter.missionType );
             out->write( sActiveFilter.minPlayers );
@@ -1374,22 +1237,34 @@ static void processServerListPackets( U32 session )
          if ( !p.tryCount )
          {
             // Packet timed out :(
-            Con::printf( "Server list packet #%d timed out.", p.index + 1 );
+            Con::printf( "Server list packet #%d timed out.", p.getIndex() + 1 );
             gPacketStatusList.erase( i );
          }
          else
          {
             // Try again...
-            Con::printf( "Rerequesting server list packet #%d...", p.index + 1 );
+            Con::printf( "Rerequesting server list packet #%d...", p.getIndex() + 1 );
             p.tryCount--;
             p.time = currentTime;
             p.key = gKey++;
 
             BitStream *out = BitStream::getPacketStream();
+            bool extendedPacket = (sActiveFilter.queryFlags & ServerFilter::NewStyleResponse) != 0;
+
+
+            if ( extendedPacket )
+               out->write( U8( NetInterface::MasterServerExtendedListRequest ) );
+            else
             out->write( U8( NetInterface::MasterServerListRequest ) );
+
             out->write( U8( sActiveFilter.queryFlags ) );   // flags
             out->write( ( session << 16) | ( p.key & 0xFFFF ) );
-            out->write( p.index );  // packet index
+            
+            if ( extendedPacket )
+               out->write( p.getOldIndex() );  // packet index
+            else
+               out->write( p.getIndex() );  // packet index
+
             out->write( U8( 0 ) );  // game type
             out->write( U8( 0 ) );  // mission type
             out->write( U8( 0 ) );  // minPlayers
@@ -1583,6 +1458,98 @@ static void handleMasterServerListResponse( BitStream* stream, U32 key, U8 /*fla
 
 //-----------------------------------------------------------------------------
 
+static void handleExtendedMasterServerListResponse(BitStream* stream, U32 key, U8 /*flags*/)
+{
+   U16 packetIndex, packetTotal;
+   U32 i;
+   U16 serverCount, port;
+   U8 netNum[16];
+   char addressBuffer[256];
+   NetAddress addr;
+
+   stream->read(&packetIndex);
+   // Validate the packet key:
+   U32 packetKey = gMasterServerPing.key;
+   if (gGotFirstListPacket)
+   {
+      for (i = 0; i < (U32)gPacketStatusList.size(); i++)
+      {
+         if (gPacketStatusList[i].index == packetIndex)
+         {
+            packetKey = gPacketStatusList[i].key;
+            break;
+         }
+      }
+   }
+
+   U32 testKey = (gPingSession << 16) | (packetKey & 0xFFFF);
+   if (testKey != key)
+      return;
+
+   stream->read(&packetTotal);
+   stream->read(&serverCount);
+
+   Con::printf("Received server list packet %d of %d from the master server (%d servers).", (packetIndex + 1), packetTotal, serverCount);
+
+   // Enter all of the servers in this packet into the ping list:
+   for (i = 0; i < serverCount; i++)
+   {
+      U8 type;
+      stream->read(&type);
+      dMemset(&addr, '\0', sizeof(NetAddress));
+
+      if (type == 0)
+      {
+         // IPV4
+         addr.type = NetAddress::IPAddress;
+         stream->read(4, &addr.address.ipv4.netNum[0]);
+         stream->read(&addr.port);
+      }
+      else
+      {
+         // IPV6
+         addr.type = NetAddress::IPV6Address;
+         stream->read(16, &addr.address.ipv6.netNum[0]);
+         stream->read(&addr.port);
+      }
+
+      pushPingRequest(&addr);
+   }
+
+   // If this is the first list packet we have received, fill the packet status list
+   // and start processing:
+   if (!gGotFirstListPacket)
+   {
+      gGotFirstListPacket = true;
+      gMasterServerQueryAddress = gMasterServerPing.address;
+      U32 currentTime = Platform::getVirtualMilliseconds();
+      for (i = 0; i < packetTotal; i++)
+      {
+         if (i != packetIndex)
+         {
+            PacketStatus* p = new PacketStatus(i, gMasterServerPing.key, currentTime);
+            gPacketStatusList.push_back(*p);
+         }
+      }
+
+      processServerListPackets(gPingSession);
+   }
+   else
+   {
+      // Remove the packet we just received from the status list:
+      for (i = 0; i < (U32)gPacketStatusList.size(); i++)
+      {
+         if ( gPacketStatusList[i].index == packetIndex )
+         {
+            gPacketStatusList.erase( i );
+            break;
+         }
+      }
+   }
+}
+
+//-----------------------------------------------------------------------------
+
 static void handleGameMasterInfoRequest( const NetAddress* address, U32 key, U8 flags )
 {
    if ( GNet->doesAllowConnections() )
@@ -1599,7 +1566,7 @@ static void handleGameMasterInfoRequest( const NetAddress* address, U32 key, U8 
       for(U32 i = 0; i < (U32)masterList->size(); i++)
       {
          masterAddr = &(*masterList)[i].address;
-         if (*(U32*)(masterAddr->netNum) == *(U32*)(address->netNum))
+         if (masterAddr->isSameAddress(*address))
          {
             fromMaster = true;
             break;
@@ -1965,7 +1932,7 @@ static void handleGameInfoResponse( const NetAddress* address, BitStream* stream
    // Get the mission name:
    stream->readString( stringBuf );
    // Clip the file extension off:
-   char* temp = dStrstr( static_cast<char*>( stringBuf ), const_cast<char*>( ".mis" ) );
+   char* temp = dStrstr( stringBuf, ".mis" );
    if ( temp )
       *temp = '\0';
    if ( !si->missionName || dStrcmp( si->missionName, stringBuf ) != 0 )
@@ -2094,8 +2061,9 @@ void DemoNetInterface::handleInfoPacket( const NetAddress* address, U8 packetTyp
       case GameMasterInfoRequest:
          handleGameMasterInfoRequest( address, key, flags );
          break;
+
+      case MasterServerExtendedListResponse:
+         handleExtendedMasterServerListResponse(stream, key, flags);
+         break;
    }
 }
-
-
-ConsoleFunctionGroupEnd( ServerQuery );

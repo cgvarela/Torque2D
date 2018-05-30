@@ -66,14 +66,7 @@ GuiTextEditCtrl::GuiTextEditCtrl()
 
    mValidateCommand = StringTable->EmptyString;
    mEscapeCommand = StringTable->EmptyString;
-#ifdef TORQUE_OS_OSX
-   UTF8	bullet[4] = { static_cast<UTF8>(0xE2), static_cast<UTF8>(0x80), static_cast<UTF8>(0xA2), 0 };
-   
-   mPasswordMask = StringTable->insert( bullet );
-#else
    mPasswordMask = StringTable->insert( "*" );
-#endif
-
 
    mEditCursor = NULL;
 }
@@ -120,7 +113,7 @@ bool GuiTextEditCtrl::onAdd()
       }
    }
 
-   if( mText && mText[0] )
+   if( mText[0] )
    {
       setText(mText);
    }
@@ -710,7 +703,6 @@ bool GuiTextEditCtrl::onKeyDown(const GuiEvent &event)
          }
 
          // End added UNIX emacs key bindings
-         
 #if !(defined(TORQUE_OS_OSX) || defined(TORQUE_OS_IOS))
          // windows style cut / copy / paste / undo keybinds
          case KEY_C:
@@ -1077,7 +1069,7 @@ void GuiTextEditCtrl::setFirstResponder()
 {
    Parent::setFirstResponder();
    
-#ifndef TORQUE_OS_IOS
+#if !defined(TORQUE_OS_IOS) && !defined(TORQUE_OS_ANDROID)
    Platform::enableKeyboardTranslation();
 #endif	
 }

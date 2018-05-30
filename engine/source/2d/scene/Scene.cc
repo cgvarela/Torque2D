@@ -53,7 +53,7 @@
 #endif
 
 #ifndef _PARTICLE_SYSTEM_H_
-#include "2d/core/particleSystem.h"
+#include "2d/core/ParticleSystem.h"
 #endif
 
 // Script bindings.
@@ -138,7 +138,7 @@ static StringTableEntry jointMotorMaxTorqueName           = jointRevoluteMotorMa
 static StringTableEntry jointMotorCorrectionFactorName    = StringTable->insert( "CorrectionFactor" );
 
 // Controller custom node names.
-static StringTableEntry controllerCustomNodeName	      = StringTable->insert( "Controllers" );
+static StringTableEntry controllerCustomNodeName          = StringTable->insert( "Controllers" );
 
 // Asset preload custom node names.
 static StringTableEntry assetPreloadNodeName              = StringTable->insert( "AssetPreloads" );
@@ -503,36 +503,60 @@ void Scene::dispatchBeginContactCallbacks( void )
         dSprintf( sceneObjectABuffer, sizeof(sceneObjectABuffer), "%d", pSceneObjectA->getId() );
         dSprintf( sceneObjectBBuffer, sizeof(sceneObjectBBuffer), "%d", pSceneObjectB->getId() );
 
-        // Format miscellaneous information.
-        char miscInfoBuffer[128];
+        // Format miscellaneous information twice so object b can see things from his point of view.
+        char miscInfoBufferA[128];
+        char miscInfoBufferB[128];
         if ( pointCount == 2 )
         {
-            dSprintf(miscInfoBuffer, sizeof(miscInfoBuffer),
+            dSprintf(miscInfoBufferA, sizeof(miscInfoBufferA),
                 "%d %d %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f",
                 shapeIndexA, shapeIndexB,
-                normal.x, normal.y,
+                -normal.x, -normal.y,
                 point1.x, point1.y,
                 normalImpulse1,
                 tangentImpulse1,
                 point2.x, point2.y,
                 normalImpulse2,
                 tangentImpulse2 );
+
+            dSprintf(miscInfoBufferB, sizeof(miscInfoBufferB),
+               "%d %d %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f",
+               shapeIndexB, shapeIndexA,
+               normal.x, normal.y,
+               point1.x, point1.y,
+               normalImpulse1,
+               tangentImpulse1,
+               point2.x, point2.y,
+               normalImpulse2,
+               tangentImpulse2);
         }
         else if ( pointCount == 1 )
         {
-            dSprintf(miscInfoBuffer, sizeof(miscInfoBuffer),
+            dSprintf(miscInfoBufferA, sizeof(miscInfoBufferA),
                 "%d %d %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f",
                 shapeIndexA, shapeIndexB,
-                normal.x, normal.y,
+                -normal.x, -normal.y,
                 point1.x, point1.y,
                 normalImpulse1,
                 tangentImpulse1 );
+
+            dSprintf(miscInfoBufferB, sizeof(miscInfoBufferB),
+               "%d %d %0.4f %0.4f %0.4f %0.4f %0.4f %0.4f",
+               shapeIndexB, shapeIndexA,
+               normal.x, normal.y,
+               point1.x, point1.y,
+               normalImpulse1,
+               tangentImpulse1);
         }
         else
         {
-            dSprintf(miscInfoBuffer, sizeof(miscInfoBuffer),
+            dSprintf(miscInfoBufferA, sizeof(miscInfoBufferA),
                 "%d %d",
                 shapeIndexA, shapeIndexB );
+
+            dSprintf(miscInfoBufferB, sizeof(miscInfoBufferB),
+               "%d %d",
+               shapeIndexB, shapeIndexA);
         }
 
         // Does the scene handle the collision callback?
@@ -543,12 +567,12 @@ void Scene::dispatchBeginContactCallbacks( void )
             Con::executef( this, 4, "onSceneCollision",
                 sceneObjectABuffer,
                 sceneObjectBBuffer,
-                miscInfoBuffer );
+                miscInfoBufferA );
         }
         else
         {
             // No, so call it on its behaviors.
-            const char* args[5] = { "onSceneCollision", "", sceneObjectABuffer, sceneObjectBBuffer, miscInfoBuffer };
+            const char* args[5] = { "onSceneCollision", "", sceneObjectABuffer, sceneObjectBBuffer, miscInfoBufferA };
             callOnBehaviors( 5, args );
         }
 
@@ -562,12 +586,12 @@ void Scene::dispatchBeginContactCallbacks( void )
                 // Yes, so perform the script callback on it.
                 Con::executef( pSceneObjectA, 3, "onCollision",
                     sceneObjectBBuffer,
-                    miscInfoBuffer );
+                    miscInfoBufferA );
             }
             else
             {
                 // No, so call it on its behaviors.
-                const char* args[4] = { "onCollision", "", sceneObjectBBuffer, miscInfoBuffer };
+                const char* args[4] = { "onCollision", "", sceneObjectBBuffer, miscInfoBufferA };
                 pSceneObjectA->callOnBehaviors( 4, args );
             }
         }
@@ -582,12 +606,12 @@ void Scene::dispatchBeginContactCallbacks( void )
                 // Yes, so perform the script callback on it.
                 Con::executef( pSceneObjectB, 3, "onCollision",
                     sceneObjectABuffer,
-                    miscInfoBuffer );
+                    miscInfoBufferB );
             }
             else
             {
                 // No, so call it on its behaviors.
-                const char* args[4] = { "onCollision", "", sceneObjectABuffer, miscInfoBuffer };
+                const char* args[4] = { "onCollision", "", sceneObjectABuffer, miscInfoBufferB };
                 pSceneObjectB->callOnBehaviors( 4, args );
             }
         }
@@ -954,8 +978,7 @@ void Scene::sceneRender( const SceneRenderState* pSceneRenderState )
     pDebugStats->renderRequests                 = 0;
     pDebugStats->renderFallbacks                = 0;
     pDebugStats->batchTrianglesSubmitted        = 0;
-    pDebugStats->batchDrawCallsStrictSingle     = 0;
-    pDebugStats->batchDrawCallsStrictMultiple   = 0;
+    pDebugStats->batchDrawCallsStrict           = 0;
     pDebugStats->batchDrawCallsSorted           = 0;
     pDebugStats->batchFlushes                   = 0;
     pDebugStats->batchBlendStateFlush           = 0;
@@ -1593,11 +1616,11 @@ S32 Scene::findJointId( b2Joint* pJoint )
     AssertFatal( pJoint != NULL, "Joint cannot be NULL." );
 
     // Find joint.
-    typeReverseJointHash::iterator itr = mReverseJoints.find( (U32)pJoint );
+    typeReverseJointHash::iterator itr = mReverseJoints.find( pJoint );
 
     if ( itr == mReverseJoints.end() )
     {
-        Con::warnf("The joint Id could not be found via a joint reference of %x", (U32)pJoint);
+        Con::warnf("The joint Id could not be found via a joint reference of %x", pJoint);
         return 0;
     }
 
@@ -1618,13 +1641,14 @@ S32 Scene::createJoint( b2JointDef* pJointDef )
     const S32 jointId = mJointMasterId++;
 
     // Insert joint.
-    typeJointHash::iterator itr = mJoints.insert( jointId, pJoint );
+    typeJointHash::iterator itr;
+    itr = mJoints.insert( jointId, pJoint );
 
     // Sanity!
     AssertFatal( itr != mJoints.end(), "Joint already in hash table." );
 
     // Insert reverse joint.
-    mReverseJoints.insert( (U32)pJoint, jointId );
+    mReverseJoints.insert( pJoint, jointId );
 
     return jointId;
 }
@@ -2184,7 +2208,7 @@ F32 Scene::getRevoluteJointAngle( const U32 jointId )
 
 //-----------------------------------------------------------------------------
 
-F32	Scene::getRevoluteJointSpeed( const U32 jointId )
+F32 Scene::getRevoluteJointSpeed( const U32 jointId )
 {
     // Fetch joint.
     b2Joint* pJoint = findJoint( jointId );
@@ -3776,7 +3800,7 @@ void Scene::SayGoodbye( b2Joint* pJoint )
 
     // Remove joint references.
     mJoints.erase( jointId );
-    mReverseJoints.erase( (U32)pJoint );
+    mReverseJoints.erase( pJoint );
 }
 
 //-----------------------------------------------------------------------------
@@ -4616,20 +4640,23 @@ void Scene::onTamlPostRead( const TamlCustomNodes& customNodes )
     }
 
     // Find controller custom node.
-    const TamlCustomNode* pControllerNode = customNodes.findNode( controllerCustomNodeName );
+    const TamlCustomNode* pControllerCustomNode = customNodes.findNode( controllerCustomNodeName );
 
     // Do we have any controllers?
-    if ( pControllerNode != NULL )
+    if ( pControllerCustomNode != NULL )
     {
         // Yes, so fetch the scene controllers.
         SimSet* pControllerSet = getControllers();
 
         // Fetch children controller nodes.
-        const TamlCustomNodeVector& controllerChildren = pControllerNode->getChildren();
+        const TamlCustomNodeVector& controllerChildren = pControllerCustomNode->getChildren();
 
         // Iterate controllers.
         for( TamlCustomNodeVector::const_iterator controllerNodeItr = controllerChildren.begin(); controllerNodeItr != controllerChildren.end(); ++controllerNodeItr )
         {
+            // Fetch controller node.
+            TamlCustomNode* pControllerNode = *controllerNodeItr;
+            
             // Is the node a proxy object?
             if ( !pControllerNode->isProxyObject() )
             {
@@ -5269,6 +5296,7 @@ static EnumTable::Enums DebugOptionsLookup[] =
                 { Scene::SCENE_DEBUG_CONTROLLERS,       "controllers" },
                 { Scene::SCENE_DEBUG_JOINTS,            "joints" },
                 { Scene::SCENE_DEBUG_WIREFRAME_RENDER,  "wireframe" },
+                { Scene::SCENE_DEBUG_AUDIO_SOURCES,     "audio"},
                 ///
                 { Scene::SCENE_DEBUG_AABB,              "aabb" },
                 { Scene::SCENE_DEBUG_OOBB,              "oobb" },

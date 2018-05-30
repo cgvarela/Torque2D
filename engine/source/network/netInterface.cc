@@ -28,6 +28,13 @@
 #include "math/mRandom.h"
 #include "game/gameInterface.h"
 
+#include "netInterface_ScriptBinding.h"
+
+#ifdef GGC_PLUGIN
+#include "GGCNatTunnel.h" 
+extern void HandleGGCPacket(NetAddress* addr, unsigned char* data, U32 dataSize);
+#endif
+
 NetInterface *GNet = NULL;
 
 NetInterface::NetInterface()
@@ -36,7 +43,7 @@ NetInterface::NetInterface()
    GNet = this;
 
    mLastTimeoutCheckTime = 0;
-   mAllowConnections = true;
+   mAllowConnections = false;
 
 }
 
@@ -106,8 +113,14 @@ void NetInterface::processPacketReceiveEvent(PacketReceiveEvent *prEvent)
       pStream.read(&packetType);
       NetAddress *addr = &prEvent->sourceAddress;
 
-      if(packetType <= GameHeartbeat)
+      if(packetType <= GameHeartbeat || packetType == MasterServerExtendedListResponse)
          handleInfoPacket(addr, packetType, &pStream);
+#ifdef GGC_PLUGIN
+      else if (packetType == GGCPacket)
+      {
+         HandleGGCPacket(addr, (U8*)packetData.data, dataSize);
+      }
+#endif
       else
       {
          // check if there's a connection already:
@@ -545,10 +558,7 @@ void NetInterface::computeNetMD5(const NetAddress *address, U32 connectSequence,
 
    U32 in[16];
    in[0] = address->type;
-   in[1] = (U32(address->netNum[0]) << 24) |
-           (U32(address->netNum[1]) << 16) |
-           (U32(address->netNum[2]) << 8)  |
-           (U32(address->netNum[3]));
+   in[1] = address->getHash();
    in[2] = address->port;
    in[3] = connectSequence;
    for(U32 i = 0; i < 12; i++)
@@ -627,15 +637,3 @@ void NetInterface::computeNetMD5(const NetAddress *address, U32 connectSequence,
     digest[2]+=c;
     digest[3]+=d;
 }
-
-ConsoleFunctionGroupBegin(NetInterface, "Global control functions for the netInterfaces.");
-
-ConsoleFunction(allowConnections,void,2,2,"( enable ) Use the allowConnections to enable (or disable) remote connections to the local game server.\n"
-                                                                "@param enable A boolean value enabling, or disabling connections to the local server.\n"
-                                                                "@return No return value")
-{
-   GNet->setAllowsConnections(dAtob(argv[1]));
-}
-
-ConsoleFunctionGroupEnd(NetInterface);
-

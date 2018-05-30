@@ -24,7 +24,8 @@
 
 #include "console/console.h"
 #include "platform/event.h"
-#include "platform/gameInterface.h"
+#include "platform/types.h"
+#include "game/gameInterface.h"
 
 #include "platformX86UNIX/platformX86UNIX.h"
 #include "platformX86UNIX/platformGL.h"
@@ -485,6 +486,19 @@ bool OpenGLDevice::setGammaCorrection(F32 g)
       Con::warnf("Error setting gamma correction: %s", SDL_GetError());
 
    return ok != -1;
+}
+
+//------------------------------------------------------------------------------
+bool OpenGLDevice::getVerticalSync()
+{
+   Con::printf("WARNING: OpenGLDevice::getVerticalSync is unimplemented %s %d\n", __FILE__, __LINE__);
+   return false;
+#if 0
+    if ( !gGLState.suppSwapInterval )
+        return( false );
+
+    return (qwglGetSwapIntervalEXT());
+#endif
 }
 
 //------------------------------------------------------------------------------

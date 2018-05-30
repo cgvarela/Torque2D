@@ -56,7 +56,7 @@ bool osxOpenGLDevice::enumDisplayModes( CGDirectDisplayID display )
     CFArrayRef modeArray = CGDisplayCopyAllDisplayModes(display, NULL);
     
     // Fetch the mode count.
-    const S32 modeCount = CFArrayGetCount(modeArray);
+    const S32 modeCount = (const S32)CFArrayGetCount(modeArray);
     
     // Iterate the modes.
     for( S32 modeIndex = 0; modeIndex < modeCount; modeIndex++ )
@@ -65,10 +65,10 @@ bool osxOpenGLDevice::enumDisplayModes( CGDirectDisplayID display )
         CGDisplayModeRef mode = (CGDisplayModeRef)CFArrayGetValueAtIndex(modeArray, modeIndex);
         
         // Get the mode width.
-        const S32 width = CGDisplayModeGetWidth(mode);
+        const S32 width = (const S32)CGDisplayModeGetWidth(mode);
         
         // Get the mode height.
-        const S32 height = CGDisplayModeGetHeight(mode);
+        const S32 height = (const S32)CGDisplayModeGetHeight(mode);
         
         // Get the pixel encoding.
         CFStringRef pixelEncoding = CGDisplayModeCopyPixelEncoding(mode);
@@ -285,7 +285,21 @@ bool osxOpenGLDevice::setScreenMode( U32 width, U32 height, U32 bpp, bool fullSc
     }
     else
     {
+#if __MAC_OS_X_VERSION_MAX_ALLOWED < 1070
+        [[platState window] setStyleMask:NSTitledWindowMask | NSClosableWindowMask] ;
+        
+        // Calculate the actual center
+        CGFloat x = ([[NSScreen mainScreen] frame].size.width - width) / 2;
+        CGFloat y = ([[NSScreen mainScreen] frame].size.height - height) / 2;
+        
+        // Create a rect to send to the window
+        NSRect newFrame = NSMakeRect(x, y, width, height);
+        
+        // Send message to the window to resize/relocate
+        [[platState window] setFrame:newFrame display:YES animate:NO];
+#else
         [[platState window] setStyleMask:NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask];
+#endif
     }
     
     [[platState torqueView] createContextWithPixelFormat:pixelFormat];
@@ -389,6 +403,20 @@ bool osxOpenGLDevice::getGammaCorrection(F32 &g)
 bool osxOpenGLDevice::setGammaCorrection(F32 g)
 {
     return false;
+}
+
+//-----------------------------------------------------------------------------
+
+bool osxOpenGLDevice::getVerticalSync()
+{
+    if (!gGLState.suppSwapInterval)
+    {
+        return false;
+    }
+    
+    //Note that this returns the number of frames between Swaps.
+    //The function returns 0 / false if SwapInterval has not been specified.
+    return getVerticalSync();
 }
 
 //-----------------------------------------------------------------------------

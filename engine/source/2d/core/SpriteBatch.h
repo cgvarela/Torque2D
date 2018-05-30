@@ -120,13 +120,19 @@ public:
     bool selectSpriteName( const char* pName );
     inline void deselectSprite( void ) { mSelectedSprite = NULL; }
     bool isSpriteSelected( void ) const { return mSelectedSprite != NULL; }
+    U32 getSpriteId( void ) const;
 
-    void setSpriteImage( const char* pAssetId, const U32 imageFrame = 0 );
+    void setSpriteImage( const char* pAssetId, const U32 imageFrame );
+    void setSpriteImage( const char* pAssetId, const char* namedFrame );
     StringTableEntry getSpriteImage( void ) const;
     void setSpriteImageFrame( const U32 imageFrame );
     U32 getSpriteImageFrame( void ) const;
+    void setSpriteNamedImageFrame( const char* namedFrame );
+    StringTableEntry getSpriteNamedImageFrame( void ) const;
     void setSpriteAnimation( const char* pAssetId );
-    StringTableEntry getSpriteAnimation( void ) const;
+	StringTableEntry getSpriteAnimation(void) const;
+	void setSpriteAnimationFrame(const U32 animationFrame);
+	U32 getSpriteAnimationFrame(void) const;
     void clearSpriteAsset( void );
 
     void setSpriteVisible( const bool visible );
@@ -134,6 +140,8 @@ public:
 
     void setSpriteLocalPosition( const Vector2& localPosition );
     Vector2 getSpriteLocalPosition( void );
+
+    const SpriteBatchItem::LogicalPosition getSpriteLogicalPosition( void ) const;
 
     void setSpriteAngle( const F32 localAngle );
     F32 getSpriteAngle( void ) const;
@@ -183,11 +191,14 @@ public:
 
 protected:
     SpriteBatchItem* createSprite( void );
+    SpriteBatchItem* createSprite( const Vector2* explicitVertices );
     SpriteBatchItem* findSpritePosition( const SpriteBatchItem::LogicalPosition& logicalPosition );
     SpriteBatchItem* findSpriteId( const U32 batchId );
     SpriteBatchItem* findSpriteName( const char* pName );
 
     virtual SpriteBatchItem* createSprite( const SpriteBatchItem::LogicalPosition& logicalPosition );
+
+    void integrateSprites(const F32 totalTime, const F32 elapsedTime, DebugStats* pDebugStats);
 
     void setBatchTransform( const b2Transform& batchTransform );
     void updateLocalExtents( void );

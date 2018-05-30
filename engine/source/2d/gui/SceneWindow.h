@@ -141,6 +141,9 @@ private:
     U32                 mRenderLayerMask;
     U32                 mRenderGroupMask;
 
+    //Audio Listener
+    bool                mProcessAudioListener;
+
     char                mDebugText[256];
 
     /// Handling Input Events.
@@ -148,7 +151,7 @@ private:
     void sendWindowInputEvent( StringTableEntry name, const GuiEvent& event );
     void sendObjectInputEvent( StringTableEntry, const GuiEvent& event );
 
-    inline void calculateCameraView( CameraView* pCameraView );
+    void calculateCameraView( CameraView* pCameraView );
 
 public:
 
@@ -264,14 +267,15 @@ public:
     void setCameraInterpolationTime( const F32 interpolationTime );
     void setCameraInterpolationMode( const CameraInterpolationMode interpolationMode );
 
+    /// Audio Listener
+    void setProcessAudioListener(bool mval);
+
     /// Camera Movement.
     void startCameraMove( const F32 interpolationTime );
     void stopCameraMove( void );
     void completeCameraMove( void );
     void undoCameraMove( const F32 interpolationTime );
     F32 interpolate( F32 from, F32 to, F32 delta );
-    F32 linearInterpolate( F32 from, F32 to, F32 delta );
-    F32 sigmoidInterpolate( F32 from, F32 to, F32 delta );
     void updateCamera( void );
 
     inline Vector2 getCameraRenderPosition( void )                      { calculateCameraView( &mCameraCurrent ); return mCameraCurrent.mDestinationArea.centre(); }
@@ -282,6 +286,9 @@ public:
     inline const Vector2& getCameraShake(void) const                    { return mCameraShakeOffset; }
     inline bool isCameraMounted( void ) const                           { return mCameraMounted; }
     inline bool isCameraMoving( void ) const                            { return mMovingCamera; }
+
+    /// Audio Listener
+    inline bool isProcessAudioListener(void) const { return mProcessAudioListener; }
 
     /// Camera Shake.
     void startCameraShake( const F32 magnitude, const F32 time );

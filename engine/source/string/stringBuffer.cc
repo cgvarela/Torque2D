@@ -25,34 +25,7 @@
 #include "string/unicode.h"
 #include "math/mMath.h"
 
-
-#if defined(TORQUE_DEBUG)
-   class StringBufferManager
-   {
-      public:
-         static StringBufferManager& getManager();
-         Vector<StringBuffer*> strings;
-         U64 request8;
-         U64 request16;
-         
-         void add(StringBuffer* s);
-         void remove(StringBuffer* s);
-         void updateStats();
-         void dumpStats();
-         void dumpAllStrings();
-   };
-
-   ConsoleFunction(sbmDumpStats, void, 1, 1, "")
-   {
-      StringBufferManager::getManager().dumpStats();
-   }
-
-   ConsoleFunction(sbmDumpStrings, void, 1, 1, "")
-   {
-      StringBufferManager::getManager().dumpAllStrings();
-   }
-#endif // TORQUE_DEBUG
-
+#include "stringBuffer_ScriptBinding.h"
 
 #if defined(TORQUE_DEBUG)
 #define SBMAddThisStringBuffer() \
@@ -411,7 +384,7 @@ void StringBuffer::getCopy(UTF16 *buff, const U32 buffSize) const
    AssertFatal(mBuffer.last() == 0, "StringBuffer::get UTF8 - not a null terminated string!");
    dMemcpy(buff, mBuffer.address(), sizeof(UTF16) * getMin(buffSize, (U32)mBuffer.size()));
    // ensure null termination.
-   buff[buffSize-1] = NULL;
+   buff[buffSize-1] = '\0';
 }
 
 UTF8* StringBuffer::createCopy8() const

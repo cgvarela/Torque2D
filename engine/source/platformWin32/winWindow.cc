@@ -74,32 +74,6 @@ extern U16  DIK_to_Key( U8 dikCode );
 
 Win32PlatState winState;
 
-
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------
-//
-// Microsoft Layer for Unicode
-// http://msdn.microsoft.com/library/default.asp?url=/library/en-us/mslu/winprog/compiling_your_application_with_the_microsoft_layer_for_unicode.asp
-//
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------
-#ifdef UNICODE
-
-HMODULE LoadUnicowsProc(void)
-{
-   return(LoadLibraryA("unicows.dll"));
-}
-
-#ifdef _cplusplus
-extern "C" {
-#endif
-   extern FARPROC _PfnLoadUnicows = (FARPROC) &LoadUnicowsProc;
-#ifdef _cplusplus
-}
-#endif
-
-#endif
-
-
-
 //--------------------------------------
 Win32PlatState::Win32PlatState()
 {
@@ -480,7 +454,7 @@ static void processKeyMessage(UINT message, WPARAM wParam, LPARAM lParam)
    event.action     = make ? (repeat ? SI_REPEAT : SI_MAKE ) : SI_BREAK;
    event.modifier   = modKey;
    event.ascii      = asciiCode;
-   event.fValue     = make ? 1.0f : 0.0f;
+   event.fValues[0]     = make ? 1.0f : 0.0f;
 
    // Store the current modifier keys
    Input::setModifierKeys(modifierKeys);
@@ -547,7 +521,7 @@ static void CheckCursorPos()
          event.action = SI_MOVE;
          event.modifier = modifierKeys;
          event.ascii = 0;
-         event.fValue = (F32)(mousePos.x - centerX);
+         event.fValues[0] = (F32)(mousePos.x - centerX);
          Game->postEvent(event);
       }
 
@@ -562,7 +536,7 @@ static void CheckCursorPos()
          event.action = SI_MOVE;
          event.modifier = modifierKeys;
          event.ascii = 0;
-         event.fValue = (F32)(mousePos.y - centerY);
+         event.fValues[0] = (F32)(mousePos.y - centerY);
          Game->postEvent(event);
       }
 
@@ -596,7 +570,7 @@ static void mouseButtonEvent(S32 action, S32 objInst)
    event.action = action;
    event.modifier = modifierKeys;
    event.ascii = 0;
-   event.fValue = action == SI_MAKE ? 1.0f : 0.0f;
+   event.fValues[0] = action == SI_MAKE ? 1.0f : 0.0f;
 
    Game->postEvent(event);
 }
@@ -619,7 +593,7 @@ static void mouseWheelEvent( S32 delta )
       event.action = SI_MOVE;
       event.modifier = modifierKeys;
       event.ascii = 0;
-      event.fValue = (F32)delta;
+      event.fValues[0] = (F32)delta;
 
       Game->postEvent( event );
    }
@@ -999,6 +973,10 @@ case WM_MOUSEMOVE:
 
       Game->postEvent(event);
    }
+   break;
+case WM_SETCURSOR:
+   if ((LOWORD(lParam) == HTCLIENT) && !(Canvas->getUseNativeCursor()))
+      SetCursor(NULL);
    break;
 case WM_LBUTTONDOWN:
    mouseButtonEvent(SI_MAKE, KEY_BUTTON0);
@@ -1494,9 +1472,9 @@ void Platform::init()
 //--------------------------------------
 void Platform::shutdown()
 {
-   sgQueueEvents = false;
-
+   sgQueueEvents = false;   
    setMouseLock( false );
+   Audio::OpenALShutdown();
    Video::destroy();
    Input::destroy();
    WinConsole::destroy();
@@ -1740,9 +1718,9 @@ bool Platform::openWebBrowser( const char* webAddress )
       convertUTF16toUTF8(sWebKey,utf8WebKey,512);
 
 #ifdef UNICODE
-      char *p = dStrstr((const char *)utf8WebKey, "%1"); 
+      char *p = dStrstr(utf8WebKey, "%1"); 
 #else
-      char *p = dStrstr( (const char *) sWebKey  , "%1"); 
+      char *p = dStrstr(sWebKey, "%1"); 
 #endif
       if (p) *p = 0; 
 

@@ -25,7 +25,7 @@
 #endif
 
 #ifndef _SPRITE_BATCH_QUERY_H_
-#include "2d/core/spriteBatchQuery.h"
+#include "2d/core/SpriteBatchQuery.h"
 #endif
 
 #ifndef _RENDER_PROXY_H_
@@ -164,6 +164,8 @@ void CompositeSprite::integrateObject( const F32 totalTime, const F32 elapsedTim
 {
     // Call Parent.
     Parent::integrateObject( totalTime, elapsedTime, pDebugStats );
+
+    integrateSprites(totalTime, elapsedTime, pDebugStats);
 
     // Finish if the spatials are NOT dirty.
     if ( !getSpatialDirty() )

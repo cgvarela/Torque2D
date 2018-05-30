@@ -37,7 +37,6 @@ protected:
     ColorF                  mLineColor;
     ColorF                  mFillColor;
     bool                    mFillMode;
-    Vector2                 mPolygonScale;          ///< Polygon Scale.
     Vector<Vector2>         mPolygonBasisList;      ///< Polygon Basis List.
     Vector<Vector2>         mPolygonLocalList;      ///< Polygon Local List.
     bool                    mIsCircle;
@@ -52,7 +51,6 @@ public:
     static void initPersistFields();
 
     /// Polygon Configuration.
-    void setPolyScale( const Vector2& scale );
     void setPolyPrimitive( const U32 polyVertexCount );
     void setPolyCustom( const U32 polyVertexCount, const char* pCustomPolygon );
     U32 getPolyVertexCount( void ) { return U32(mPolygonBasisList.size()); };
@@ -78,8 +76,8 @@ public:
     /// Internal Crunchers.
     void generateLocalPoly( void );
 
-    void renderCircleShape(Vector2 position, F32 radius);
-    void renderPolygonShape(U32 vertexCount);
+    void renderCircleShape(Vector2 position, F32 radius, const bool wireFrame);
+    void renderPolygonShape(U32 vertexCount, const bool wireFrame);
 
     /// Render flipping.
     inline void setFlip( const bool flipX, const bool flipY )   { mFlipX = flipX; mFlipY = flipY; generateLocalPoly(); }
@@ -117,7 +115,7 @@ protected:
     static bool writeFillColor( void* obj, StringTableEntry pFieldName ) { return static_cast<ShapeVector*>(obj)->mFillColor != ColorF(0.5f,0.5f,0.5f,1.0f); }
     static bool writeFillMode( void* obj, StringTableEntry pFieldName ) { return static_cast<ShapeVector*>(obj)->mFillMode == true; }
     static bool writeIsCircle( void* obj, StringTableEntry pFieldName ) { return static_cast<ShapeVector*>(obj)->mIsCircle == true; }
-    static bool writeCircleRadius( void* obj, StringTableEntry pFieldName ) { return static_cast<ShapeVector*>(obj)->mIsCircle != 1; }
+    static bool writeCircleRadius( void* obj, StringTableEntry pFieldName ) { return static_cast<ShapeVector*>(obj)->mCircleRadius != 1; }
 };
 
 #endif // _SHAPE_VECTOR_H_

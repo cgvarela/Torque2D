@@ -54,7 +54,7 @@ AssetDatabase.EchoInfo = false;
 AssetDatabase.IgnoreAutoUnload = true;
 
 // Scan modules.
-ModuleDatabase.scanModules( "modules" );
+ModuleDatabase.scanModules( "./modules" );
 
 // Load AppCore module.
 ModuleDatabase.LoadExplicit( "AppCore" );
@@ -65,4 +65,14 @@ function onExit()
 {
     // Unload the AppCore module.
     ModuleDatabase.unloadExplicit( "AppCore" );
+}
+
+function androidBackButton(%val)
+{
+	if (%val) {
+		//Add code here for other options the back button can do like going back a screen.  the quit should happen at your main menu.
+
+		quit();
+	}
+
 }
